@@ -118,6 +118,11 @@ public final class GateRouter {
             return Outcome.QUERY_FAILED;
         }
         if (!assignment.isAssigned()) {
+            if (assignment.reason() != null) {
+                // 1.10.0 房间层：成局有效但无可用房间（预占过期/清单变更）。
+                // 路由行为与无分配一致（留大厅），仅日志区分原因。
+                logger.info("玩家 {} 无有效分配（reason={}），留在大厅", uuid, assignment.reason());
+            }
             return Outcome.NO_ASSIGNMENT;
         }
 
