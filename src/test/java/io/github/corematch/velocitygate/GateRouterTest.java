@@ -110,6 +110,20 @@ class GateRouterTest {
         verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
     }
 
+    @Test
+    void noRoomAvailableStaysInLobbyAndLogsReason() {
+        client = uuid -> AssignmentResult.fromJson(com.google.gson.JsonParser.parseString(
+                "{\"assigned\":false,\"reason\":\"no_room_available\"}").getAsJsonObject());
+
+        GateRouter.Outcome outcome = router().route(player).join();
+
+        assertEquals(GateRouter.Outcome.NO_ASSIGNMENT, outcome);
+        verify(player, never()).createConnectionRequest(any());
+        verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
+        verify(logger).info("玩家 {} 无有效分配（reason={}），留在大厅",
+                PLAYER_UUID, "no_room_available");
+    }
+
     // ── 路径三：查询失败 → 留大厅（不阻断登录）────────────────────────
     @Test
     void queryFailureKeepsPlayerInLobby() {

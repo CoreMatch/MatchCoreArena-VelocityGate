@@ -65,6 +65,15 @@ class HttpMcaClientTest {
         start(200, envelope("{\"assigned\":false}"));
         AssignmentResult result = client().queryAssignment("00000000-0000-0000-0000-000000000001");
         assertFalse(result.isAssigned());
+        assertEquals(null, result.reason());
+    }
+
+    @Test
+    void parsesNoRoomAvailableReason() throws Exception {
+        start(200, envelope("{\"assigned\":false,\"reason\":\"no_room_available\"}"));
+        AssignmentResult result = client().queryAssignment("00000000-0000-0000-0000-000000000001");
+        assertFalse(result.isAssigned());
+        assertEquals("no_room_available", result.reason());
     }
 
     @Test
