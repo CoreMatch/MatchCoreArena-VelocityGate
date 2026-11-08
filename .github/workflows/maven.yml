@@ -1,0 +1,28 @@
+# Minimal Maven CI: build and test on every push/PR to the mainline.
+#
+# The plugin compiles against the PaperMC-published Velocity API
+# (provided scope) and runs pure-JVM unit tests (Mockito + a JDK
+# HttpServer stub), so no Minecraft/Velocity instance is needed here.
+name: Maven
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'maven'
+
+    - name: Build and test
+      run: mvn -B -ntp verify
