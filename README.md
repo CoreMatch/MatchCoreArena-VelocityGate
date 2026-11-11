@@ -55,8 +55,16 @@ HRPAuth 不可达是 502 `oauth_hrpauth_down` 的基础设施故障（见下方�
   4. 桩 MCA 不启动（连接拒绝）→ 留大厅，日志出现分类 `[UNREACHABLE]`
      （此轮联调还抓到并修复了一个真 bug：分类异常携带内层 cause 时曾被
      过度解包成 `[UNEXPECTED]`，已修并补回归测试）。
-  尚未验证的边界：真实 Minecraft 客户端（含 1.20.2+ 配置阶段）、真实游戏服
-  后端（BedwarsRel 子服）、生产 MCA 实例。首次上机仍需人工观察日志。
+  尚未验证的边界：真实人类 Minecraft 客户端（含 1.20.2+ 配置阶段）与生产
+  MCA 实例。首次上机仍需人工观察日志。
+- **全链 E2E（本机临时环境，2026-11-12）**：真实 MCA-Server（Go + MariaDB
+  + Redis 容器，HRPAuth 按公开端点契约 mock）+ 真实 Velocity 3.4.0 + 真实
+  CraftBukkit 1.8.8 子服（BedwarsRel-MCA 当前构建）。两名 protocol-47 机器
+  人排队成局（房间层预占 arena-e2e）→ 连代理 → 本插件查真实 MCA 后分别按
+  A/B 队转向子服（日志「已转入目标服 bwsub」）→ 子服入房开局 → 一方离场
+  触发结算上报 → MCA 消费 `matchmaking_group_id` 释放预占
+  （`rooms_released_settled_total=1`），分配查询变为 `assigned:false`。
+  用后环境已全部清理。
 - 依赖的服务端能力（MCA main `26527ba` 起、契约 1.9.1）已合并并部署生产：
   `GET /api/matchmaking/assignment/{uuid}`（仅 OPS 凭据；未知 UUID 回
   `assigned:false`；`matches.matchmaking_group_id` 关联列由迁移 v3 自动补）。
