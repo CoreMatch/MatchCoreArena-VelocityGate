@@ -1,5 +1,5 @@
 # MatchCoreArena-VelocityGate 部署声明（deploy-manifest v1）
-# schema 依据：HA-Services-Deployer internal/manifest/（SchemaVersion=1）
+# schema 依据：HA-Cupbearer internal/manifest/（SchemaVersion=1）
 #
 # kind=plugin：插件型产物（Velocity 代理插件 jar），装进 Velocity 代理进程，
 # 没有自己的进程/端口/健康面。编排器对插件条目只登记与校验、不执行安装
