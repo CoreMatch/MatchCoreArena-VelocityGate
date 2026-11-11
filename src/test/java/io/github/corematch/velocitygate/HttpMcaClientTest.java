@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 用 JDK 内嵌 HTTP 服务桩验证 MCA 客户端语义。 */
+/** 用 JDK 内嵌 HTTP 服务桩验证 MCA 客户端语义与失败分类。 */
 class HttpMcaClientTest {
 
     private HttpServer server;
@@ -84,38 +84,101 @@ class HttpMcaClientTest {
         assertEquals(null, result.joinTargetKey());
     }
 
+    /** 1.9.1 起服务端对未知 UUID 恒回 200 assigned:false；404 只可能是路径配错，必须显式失败。 */
     @Test
-    void notFoundMeansNoAssignment() throws Exception {
-        start(404, "{\"success\":false,\"code\":\"mca_user_not_found\"}");
-        AssignmentResult result = client().queryAssignment("00000000-0000-0000-0000-000000000001");
-        assertFalse(result.isAssigned());
-    }
-
-    @Test
-    void serverErrorIsUnavailable() throws Exception {
-        start(500, "boom");
-        assertThrows(McaUnavailableException.class,
+    void notFoundIsExplicitFailure() throws Exception {
+        start(404, "{\"success\":false,\"code\":\"not_found\"}");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
                 () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.NOT_FOUND, e.category());
     }
 
     @Test
-    void unreachableIsUnavailable() {
+    void serverErrorIsHttpError() throws Exception {
+        start(500, "boom");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.HTTP_ERROR, e.category());
+    }
+
+    /** 502 + oauth_hrpauth_down：HRPAuth 不可达，与"未绑定用户"（200 assigned:false）严格区分。 */
+    @Test
+    void hrpAuthDownIsClassified() throws Exception {
+        start(502, "{\"success\":false,\"message\":\"查询成局分配失败\","
+                + "\"code\":\"oauth_hrpauth_down\",\"error\":\"oauth_hrpauth_down\"}");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.HRP_AUTH_DOWN, e.category());
+    }
+
+    /** 502 但错误码不是 oauth_hrpauth_down：按其余状态码处理，不误判。 */
+    @Test
+    void otherBadGatewayIsHttpError() throws Exception {
+        start(502, "{\"success\":false,\"code\":\"internal_error\"}");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.HTTP_ERROR, e.category());
+    }
+
+    /** 502 且响应体不是 JSON：分类不受影响。 */
+    @Test
+    void badGatewayWithGarbageBodyIsHttpError() throws Exception {
+        start(502, "<html>bad gateway</html>");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.HTTP_ERROR, e.category());
+    }
+
+    @Test
+    void authRejectedIsClassified() throws Exception {
+        start(403, "{\"success\":false,\"code\":\"oauth_insufficient_scope\"}");
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.AUTH_REJECTED, e.category());
+    }
+
+    @Test
+    void timeoutIsClassified() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/matchmaking/assignment/", exchange -> {
+            try {
+                Thread.sleep(800);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        server.start();
+        HttpMcaClient slow = new HttpMcaClient(
+                "http://127.0.0.1:" + server.getAddress().getPort(), "tok", 100);
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> slow.queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.TIMEOUT, e.category());
+    }
+
+    @Test
+    void unreachableIsUnreachable() {
         //  closed port → connection refused.
         HttpMcaClient closed = new HttpMcaClient("http://127.0.0.1:1", "tok", 500);
-        assertThrows(McaUnavailableException.class,
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
                 () -> closed.queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.UNREACHABLE, e.category());
     }
 
     @Test
-    void malformedEnvelopeIsUnavailable() throws Exception {
+    void malformedEnvelopeIsBadResponse() throws Exception {
         start(200, "{\"success\":true}");
-        assertThrows(McaUnavailableException.class,
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
                 () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
+        assertEquals(McaUnavailableException.Category.BAD_RESPONSE, e.category());
     }
 
     @Test
     void invalidUuidRejectedWithoutNetwork() {
         HttpMcaClient closed = new HttpMcaClient("http://127.0.0.1:1", "tok", 500);
-        assertThrows(McaUnavailableException.class, () -> closed.queryAssignment("not-a-uuid"));
+        McaUnavailableException e = assertThrows(McaUnavailableException.class,
+                () -> closed.queryAssignment("not-a-uuid"));
+        assertEquals(McaUnavailableException.Category.BAD_RESPONSE, e.category());
     }
 }

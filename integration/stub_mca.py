@@ -1,6 +1,7 @@
-import http.server, json, os
+import http.server, json, os, sys
 
 SCENARIO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenario.json")
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 18180
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -18,4 +19,4 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print("[stub-mca]", self.address_string(), self.path, flush=True)
 
-http.server.HTTPServer(("127.0.0.1", 18080), Handler).serve_forever()
+http.server.HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

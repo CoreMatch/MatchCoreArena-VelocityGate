@@ -19,27 +19,40 @@ import java.util.concurrent.Executor;
 
 /**
  * 路由决策核心：玩家连上代理并落在大厅后，按 UUID 查一次 MCA 成局分配，
- * 查到且可映射则转到对应后端服，其余一律留在大厅。
+ * 按契约 1.10.0 的三种形态分别处置：
  *
- * <p>失败路径全部退化为"留在大厅 + 一句可读提示"，绝不卡住连接：</p>
+ * <ol>
+ *   <li>{@code assigned:true} 且带 {@code join_target} → 转向映射的后端服；</li>
+ *   <li>{@code assigned:false}（无 reason）→ 静默留大厅。这是正常态：
+ *       未绑定用户、无成局、已结算、过 TTL 都走这里，不是错误；</li>
+ *   <li>{@code assigned:false} + {@code reason:no_room_available} → 留大厅，
+ *       并给玩家一句可读原因（成局有效但房间预占过期/清单变更）。</li>
+ * </ol>
+ *
+ * <p>其余失败路径全部退化为"留在大厅（+ 提示）"，绝不卡住连接：</p>
  * <ul>
- *   <li>MCA 不可达/超时 → 静默留大厅（查询失败不阻断登录）；</li>
- *   <li>无有效分配 → 静默留大厅；</li>
+ *   <li>MCA 查询失败 → 静默留大厅（不阻断登录），日志按
+ *       {@link McaUnavailableException.Category} 分类：网络不可达 / 超时 /
+ *       凭据被拒（401/403）/ 路径不存在（404，多为 base_url 配错）/
+ *       HRPAuth 不可达（502 oauth_hrpauth_down）/ 其余状态码 / 坏信封。
+ *       注意"未绑定用户"与"HRPAuth 不可达"的区别：前者是 200
+ *       assigned:false 的正常态（形态 2），后者是基础设施故障；</li>
  *   <li>成局未带地址 / 地址未在映射表 / 目标服未注册 / 连接失败
  *       → 留大厅并发送提示。</li>
  * </ul>
  *
- * <p>每个会话（连接→断开）只查一次，防止大厅↔目标服之间反复跳转。</p>
+ * <p>每个会话（连接→断开）只查一次，防止大厅↔目标服之间反复跳转；
+ * 断线清除标记，重连重新查询。</p>
  */
 public final class GateRouter {
 
     /** 路由结果（测试与日志用）。 */
     public enum Outcome {
-        /** 已发起转向目标服。 */
+        /** 已发起转向目标服（最终成败见后续日志）。 */
         ROUTED,
-        /** 无有效分配，留大厅。 */
+        /** 无有效分配，留大厅（含 no_room_available，后者会向玩家提示）。 */
         NO_ASSIGNMENT,
-        /** MCA 查询失败，留大厅。 */
+        /** MCA 查询失败，留大厅（日志带失败分类）。 */
         QUERY_FAILED,
         /** 成局有效但未携带游戏服地址。 */
         NO_JOIN_TARGET,
@@ -61,6 +74,10 @@ public final class GateRouter {
             Component.text("无法进入对局：目标服务器未就绪，请稍后重试。");
     static final Component MSG_CONNECT_FAILED =
             Component.text("进入对局服务器失败，已留在大厅，请稍后重试。");
+    static final Component MSG_NO_ROOM_AVAILABLE =
+            Component.text("你的对局仍然有效，但房间已不可用（预占可能已过期），请重新加入匹配。");
+    static final Component MSG_ASSIGNMENT_UNAVAILABLE =
+            Component.text("匹配结果当前无法生效，请重新加入匹配或联系管理员。");
 
     private final ProxyServer proxy;
     private final GateConfig config;
@@ -114,14 +131,30 @@ public final class GateRouter {
 
     private Outcome decide(Player player, UUID uuid, AssignmentResult assignment, Throwable error) {
         if (error != null) {
-            logger.warn("MCA 分配查询失败（玩家 {} 留在大厅）: {}", uuid, rootMessage(error));
+            McaUnavailableException mca = findMcaUnavailable(error);
+            if (mca != null) {
+                logger.warn("MCA 分配查询失败 [{}]（玩家 {} 留在大厅）: {}",
+                        mca.category(), uuid, mca.getMessage());
+            } else {
+                logger.warn("MCA 分配查询失败 [UNEXPECTED]（玩家 {} 留在大厅）: {}",
+                        uuid, messageOf(error));
+            }
             return Outcome.QUERY_FAILED;
         }
         if (!assignment.isAssigned()) {
-            if (assignment.reason() != null) {
-                // 1.10.0 房间层：成局有效但无可用房间（预占过期/清单变更）。
-                // 路由行为与无分配一致（留大厅），仅日志区分原因。
-                logger.info("玩家 {} 无有效分配（reason={}），留在大厅", uuid, assignment.reason());
+            String reason = assignment.reason();
+            if (reason == null) {
+                // 正常态（未绑定用户/无成局/已结算/过 TTL）：静默留大厅。
+                logger.info("玩家 {} 当前无有效分配，留在大厅", uuid);
+                return Outcome.NO_ASSIGNMENT;
+            }
+            if (AssignmentResult.REASON_NO_ROOM_AVAILABLE.equals(reason)) {
+                logger.info("玩家 {} 成局有效但无可用房间（reason={}），留在大厅", uuid, reason);
+                player.sendMessage(MSG_NO_ROOM_AVAILABLE);
+            } else {
+                // 契约枚举外的未知原因：不猜测语义，给通用提示并告警。
+                logger.warn("玩家 {} 无有效分配且携带未知原因（reason={}），留在大厅", uuid, reason);
+                player.sendMessage(MSG_ASSIGNMENT_UNAVAILABLE);
             }
             return Outcome.NO_ASSIGNMENT;
         }
@@ -159,11 +192,16 @@ public final class GateRouter {
             player.createConnectionRequest(server.get())
                     .connect()
                     .whenComplete((result, connectError) -> {
-                        boolean ok = connectError == null && result != null && result.isSuccessful();
-                        if (!ok) {
-                            logger.warn("玩家 {} 连接目标服 {} 失败，留在大厅",
-                                    uuid, serverName);
+                        if (connectError != null) {
+                            logger.warn("玩家 {} 连接目标服 {} 失败（{}），留在大厅",
+                                    uuid, serverName, messageOf(connectError));
                             player.sendMessage(MSG_CONNECT_FAILED);
+                        } else if (result == null || !result.isSuccessful()) {
+                            logger.warn("玩家 {} 连接目标服 {} 失败（状态: {}），留在大厅",
+                                    uuid, serverName, result == null ? "无结果" : result.getStatus());
+                            player.sendMessage(MSG_CONNECT_FAILED);
+                        } else {
+                            logger.info("玩家 {} 已转入目标服 {}", uuid, serverName);
                         }
                     });
         } catch (RuntimeException e) {
@@ -171,17 +209,39 @@ public final class GateRouter {
             player.sendMessage(MSG_CONNECT_FAILED);
             return Outcome.CONNECT_FAILED;
         }
-        logger.info("玩家 {} 按成局 {}（{} {}队）转向 {}",
+        logger.info("玩家 {} 按成局 {}（{} {}队）发起转向 {}",
                 uuid, assignment.groupId(), assignment.matchType(), assignment.teamId(), serverName);
         return Outcome.ROUTED;
     }
 
-    private static String rootMessage(Throwable error) {
+    /**
+     * 沿异常链找第一个 {@link McaUnavailableException}。不能直接解包到
+     * 最内层：客户端抛出的分类异常通常携带更内层的原始 cause（如
+     * ClosedChannelException），解包到底会丢掉分类信息。
+     */
+    private static McaUnavailableException findMcaUnavailable(Throwable error) {
+        Throwable cursor = error;
+        while (cursor != null) {
+            if (cursor instanceof McaUnavailableException mca) {
+                return mca;
+            }
+            Throwable next = cursor.getCause();
+            cursor = (next == cursor) ? null : next;
+        }
+        return null;
+    }
+
+    private static Throwable rootCause(Throwable error) {
         Throwable cursor = error;
         while (cursor.getCause() != null && cursor.getCause() != cursor) {
             cursor = cursor.getCause();
         }
-        String message = cursor.getMessage();
-        return message == null ? cursor.getClass().getSimpleName().toLowerCase(Locale.ROOT) : message;
+        return cursor;
+    }
+
+    private static String messageOf(Throwable error) {
+        Throwable root = rootCause(error);
+        String message = root.getMessage();
+        return message == null ? root.getClass().getSimpleName().toLowerCase(Locale.ROOT) : message;
     }
 }
