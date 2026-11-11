@@ -111,7 +111,7 @@ class GateRouterTest {
     }
 
     @Test
-    void noRoomAvailableStaysInLobbyAndLogsReason() {
+    void noRoomAvailableStaysInLobbyAndNotifiesWithReadableReason() {
         client = uuid -> AssignmentResult.fromJson(com.google.gson.JsonParser.parseString(
                 "{\"assigned\":false,\"reason\":\"no_room_available\"}").getAsJsonObject());
 
@@ -119,12 +119,26 @@ class GateRouterTest {
 
         assertEquals(GateRouter.Outcome.NO_ASSIGNMENT, outcome);
         verify(player, never()).createConnectionRequest(any());
-        verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
-        verify(logger).info("玩家 {} 无有效分配（reason={}），留在大厅",
+        verify(player).sendMessage(GateRouter.MSG_NO_ROOM_AVAILABLE);
+        verify(logger).info("玩家 {} 成局有效但无可用房间（reason={}），留在大厅",
                 PLAYER_UUID, "no_room_available");
     }
 
-    // ── 路径三：查询失败 → 留大厅（不阻断登录）────────────────────────
+    @Test
+    void unknownReasonStaysInLobbyWithGenericNotice() {
+        client = uuid -> AssignmentResult.fromJson(com.google.gson.JsonParser.parseString(
+                "{\"assigned\":false,\"reason\":\"some_future_reason\"}").getAsJsonObject());
+
+        GateRouter.Outcome outcome = router().route(player).join();
+
+        assertEquals(GateRouter.Outcome.NO_ASSIGNMENT, outcome);
+        verify(player, never()).createConnectionRequest(any());
+        verify(player).sendMessage(GateRouter.MSG_ASSIGNMENT_UNAVAILABLE);
+        verify(logger).warn("玩家 {} 无有效分配且携带未知原因（reason={}），留在大厅",
+                PLAYER_UUID, "some_future_reason");
+    }
+
+    // ── 路径三：查询失败 → 留大厅（不阻断登录），日志带失败分类 ──────
     @Test
     void queryFailureKeepsPlayerInLobby() {
         client = uuid -> {
@@ -136,6 +150,41 @@ class GateRouterTest {
         assertEquals(GateRouter.Outcome.QUERY_FAILED, outcome);
         verify(player, never()).createConnectionRequest(any());
         verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
+    }
+
+    /** HRPAuth 不可达（502 oauth_hrpauth_down）必须在日志里与一般失败区分开。 */
+    @Test
+    void hrpAuthDownFailureIsLoggedWithCategory() {
+        client = uuid -> {
+            throw new McaUnavailableException(
+                    McaUnavailableException.Category.HRP_AUTH_DOWN, "HRPAuth 不可达");
+        };
+
+        GateRouter.Outcome outcome = router().route(player).join();
+
+        assertEquals(GateRouter.Outcome.QUERY_FAILED, outcome);
+        verify(player, never()).createConnectionRequest(any());
+        verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
+        verify(logger).warn("MCA 分配查询失败 [{}]（玩家 {} 留在大厅）: {}",
+                McaUnavailableException.Category.HRP_AUTH_DOWN, PLAYER_UUID, "HRPAuth 不可达");
+    }
+
+    /**
+     * 回归：分类异常携带更内层 cause（真实形态，如 ClosedChannelException）
+     * 时不得解包过头丢掉分类（联调中实际抓到过 [UNEXPECTED] 误报）。
+     */
+    @Test
+    void categorizedFailureWithNestedCauseKeepsCategory() {
+        client = uuid -> {
+            throw new McaUnavailableException(McaUnavailableException.Category.UNREACHABLE,
+                    "MCA 不可达: channel closed", new java.nio.channels.ClosedChannelException());
+        };
+
+        GateRouter.Outcome outcome = router().route(player).join();
+
+        assertEquals(GateRouter.Outcome.QUERY_FAILED, outcome);
+        verify(logger).warn("MCA 分配查询失败 [{}]（玩家 {} 留在大厅）: {}",
+                McaUnavailableException.Category.UNREACHABLE, PLAYER_UUID, "MCA 不可达: channel closed");
     }
 
     // ── 路径四：目标服不可用 → 退大厅并提示 ───────────────────────────

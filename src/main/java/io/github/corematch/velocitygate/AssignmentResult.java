@@ -10,10 +10,13 @@ import com.google.gson.JsonObject;
  * <p>1.10.0 房间层的 {@code room} 字段在这里有意不消费：代理只负责把玩家
  * 送到 {@code join_target} 指向的子服，具体房间由子服上的 BedwarsRel-MCA
  * 自行向 MCA 复核（见 BedwarsRel-MCA knowledge/0004）。{@code reason}
- * （目前仅 {@code no_room_available}）用于日志可观测：路由行为与无分配
- * 完全一致（留在大厅）。</p>
+ * （目前仅 {@code no_room_available}）用于给玩家一句可读原因：路由行为
+ * 与无分配一致（留在大厅），但会向玩家发送提示。</p>
  */
 public final class AssignmentResult {
+
+    /** 契约 1.10.0 目前唯一的 reason 枚举值：成局有效但无可用房间。 */
+    public static final String REASON_NO_ROOM_AVAILABLE = "no_room_available";
 
     private static final AssignmentResult NONE = new AssignmentResult(false, 0, null, null, null, 0, null);
 

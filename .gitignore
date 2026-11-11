@@ -3,3 +3,8 @@ target/
 .idea/
 __pycache__/
 *.pyc
+# integration harness runtime artifacts (velocity.jar 需自备，不入库)
+integration/velocity.jar
+integration/*.log
+integration/scenario.json
+integration/velocity-run/
