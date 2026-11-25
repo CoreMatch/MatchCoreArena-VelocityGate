@@ -3,11 +3,11 @@
 #
 # kind=plugin：插件型产物（Velocity 代理插件 jar），装进 Velocity 代理进程，
 # 没有自己的进程/端口/健康面。编排器对插件条目只登记与校验、不执行安装
-# （阶段未设）；安装步骤见 HRPAuth-Wiki deploy/matchcorearena-velocitygate.md。
+# （阶段未设）；安装步骤见 Armorial Wiki deploy/matchcorearena-velocitygate.md。
 manifest_version: 1
 kind: plugin
 project: velocitygate
-display_name: MatchCoreArena-VelocityGate
+display_name: Armorial MatchCoreArena-VelocityGate
 group: edge
 # pom 版本 1.0.0（velocity-plugin.json id velocitygate）；仓库无 git 版本 tag。
 service_version: "1.0.0"

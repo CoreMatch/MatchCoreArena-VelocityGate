@@ -152,12 +152,12 @@ class GateRouterTest {
         verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
     }
 
-    /** HRPAuth 不可达（502 oauth_hrpauth_down）必须在日志里与一般失败区分开。 */
+    /** Armorial 不可达（502 oauth_hrpauth_down）必须在日志里与一般失败区分开。 */
     @Test
     void hrpAuthDownFailureIsLoggedWithCategory() {
         client = uuid -> {
             throw new McaUnavailableException(
-                    McaUnavailableException.Category.HRP_AUTH_DOWN, "HRPAuth 不可达");
+                    McaUnavailableException.Category.HRP_AUTH_DOWN, "Armorial 不可达");
         };
 
         GateRouter.Outcome outcome = router().route(player).join();
@@ -166,7 +166,7 @@ class GateRouterTest {
         verify(player, never()).createConnectionRequest(any());
         verify(player, never()).sendMessage(any(net.kyori.adventure.text.Component.class));
         verify(logger).warn("MCA 分配查询失败 [{}]（玩家 {} 留在大厅）: {}",
-                McaUnavailableException.Category.HRP_AUTH_DOWN, PLAYER_UUID, "HRPAuth 不可达");
+                McaUnavailableException.Category.HRP_AUTH_DOWN, PLAYER_UUID, "Armorial 不可达");
     }
 
     /**

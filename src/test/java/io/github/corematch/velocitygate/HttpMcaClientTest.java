@@ -101,7 +101,7 @@ class HttpMcaClientTest {
         assertEquals(McaUnavailableException.Category.HTTP_ERROR, e.category());
     }
 
-    /** 502 + oauth_hrpauth_down：HRPAuth 不可达，与"未绑定用户"（200 assigned:false）严格区分。 */
+    /** 502 + oauth_hrpauth_down：Armorial 不可达，与"未绑定用户"（200 assigned:false）严格区分。 */
     @Test
     void hrpAuthDownIsClassified() throws Exception {
         start(502, "{\"success\":false,\"message\":\"查询成局分配失败\","
@@ -109,6 +109,8 @@ class HttpMcaClientTest {
         McaUnavailableException e = assertThrows(McaUnavailableException.class,
                 () -> client().queryAssignment("00000000-0000-0000-0000-000000000001"));
         assertEquals(McaUnavailableException.Category.HRP_AUTH_DOWN, e.category());
+        assertTrue(e.getMessage().contains("Armorial 不可达"));
+        assertTrue(e.getMessage().contains("oauth_hrpauth_down"));
     }
 
     /** 502 但错误码不是 oauth_hrpauth_down：按其余状态码处理，不误判。 */

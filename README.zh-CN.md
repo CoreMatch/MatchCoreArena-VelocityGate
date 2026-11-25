@@ -16,8 +16,8 @@ MatchCoreArena VelocityGate 是面向 Velocity 3.4.0 的 Java 17 插件，将已
 
 ## 进一步了解
 
-- [HA Wiki](https://wiki.mcnb.dev/) — 生态文档
-- [HA Contract](https://github.com/CoreMatch/HA-Contract) — 接口契约
+- [Armorial Wiki](https://wiki.mcnb.dev/) — 生态文档
+- [Armorial Contract](https://github.com/CoreMatch/HA-Contract) — 接口契约
 - [MatchCoreArena Server](https://github.com/CoreMatch/MatchCoreArena-Server) — 分配来源
 - [MCA-Cascade](https://github.com/CoreMatch/MCA-Cascade) — Cascade 侧决策库
 

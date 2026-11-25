@@ -106,7 +106,7 @@ public final class HttpMcaClient implements McaClient {
         }
         if (status == 502 && bodyHasCode(response.body(), CODE_HRP_AUTH_DOWN)) {
             throw new McaUnavailableException(McaUnavailableException.Category.HRP_AUTH_DOWN,
-                    "HRPAuth 不可达（502 oauth_hrpauth_down）：无法解析玩家身份，本次留大厅");
+                    "Armorial 不可达（502 oauth_hrpauth_down）：无法解析玩家身份，本次留大厅");
         }
         throw new McaUnavailableException(McaUnavailableException.Category.HTTP_ERROR,
                 "MCA 返回非预期状态码: " + status);

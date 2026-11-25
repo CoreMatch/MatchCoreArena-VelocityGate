@@ -16,8 +16,8 @@ MatchCoreArena VelocityGate is a Java 17 plugin for Velocity 3.4.0 that routes a
 
 ## Learn more
 
-- [HA Wiki](https://wiki.mcnb.dev/) — ecosystem documentation
-- [HA Contract](https://github.com/CoreMatch/HA-Contract) — interface contracts
+- [Armorial Wiki](https://wiki.mcnb.dev/) — ecosystem documentation
+- [Armorial Contract](https://github.com/CoreMatch/HA-Contract) — interface contracts
 - [MatchCoreArena Server](https://github.com/CoreMatch/MatchCoreArena-Server) — assignment source
 - [MCA-Cascade](https://github.com/CoreMatch/MCA-Cascade) — Cascade-side decision library
 
